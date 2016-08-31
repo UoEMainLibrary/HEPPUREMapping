@@ -1,0 +1,40 @@
+Inspire HEP - PURE MarcXML Mapping tool
+=======================================
+HEP_PURE_Mapping.php is a php script that uses curl to bring back MarcXML from http://inspirehep.net, and transforms it, using PHP XmlWriter,
+into PURE-ready XML. The generated XML files can then be run into PURE using the Administator's Research Output import wizard.
+
+All of the structure in the repo should be uploaded to your server.
+
+In its current form, it is not particularly agile, in that it can only pass two parameters into the searching url:journal year and collaboration.
+This means that it is good for loading a backlog of papers, but more work needs to be done to make it usable on a regular basis (unless running annually).
+It can be run for individual papers too, using an ID.
+
+We wrote the script to satisfy a requirement to load all authors for a collaboration, while matching those local to the
+institution (in our case Edinburgh). The example files in the input folder show the correct format to do this matching.
+Any matched authors will show as internal in the PURE application.
+
+Similarly, there is the option of declaring the affiliated organisations for the authors. We make this optional, as we've found that
+loading these can cause failures, as the PURE matching process is very resource-heavy. Loading without organisations works every time. If organisations are
+to be matched, an optional orgs.txt can be uploaded, which means the importer is matching on an ID, not a string (it will work more slowly without this).
+
+We default 5 papers to an XML file, but I have seen loads work with 20 or more, so that is a variable setting. The script download.php allows
+the output to be returned in a zip file to the client user.
+
+We report as much as possible back to the client user:
+-If there is no Acceptance Date, it must be added manually.
+-If there is no Published Date or any matched authors, the XML will not be produced for that paper.
+-If there is no electronic version on SCOAP, again, it must be added manually.
+
+STATUS
+======
+The code could be re-written to make it more modular- currently it is one long flow.
+There is a quirk where two hard-coded names are escaped. There seems to be corrupt data in Inspire for these authors, and
+I have been unable to fix it.
+
+
+
+
+
+
+
+
