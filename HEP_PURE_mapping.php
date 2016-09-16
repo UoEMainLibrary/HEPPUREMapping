@@ -77,10 +77,11 @@ if (isset($_POST['upload']))
     else{
         $loop = 5;
     }
-
+    $override = false;
     //if specific paper specified, that overrides anything else entered
     if ($paperid !== '') {
         $parms = $paperid;
+        $override = true;
     }
     else
     if ($year == "*")
@@ -170,7 +171,7 @@ if (isset($_POST['upload']))
             $uploadOkOrg = 0;
         }
 
-        if ($_FILES["internalOrgfile"]["size"] > 500000) {
+        if ($_FILES["orgfile"]["size"] > 500000) {
             echo "Sorry, your file is too large.";
             $uploadOkOrg = 0;
         }
@@ -194,7 +195,7 @@ if (isset($_POST['upload']))
         chmod($target_org_file, 0777);
         //Process Org file into an array
         //o counts through the array from the input mapping file
-        $k = 0;
+        $o = 0;
         $file_handle_org_in = fopen($target_org_file, "r") or die ("can't open org mapping file");
 
         while (!feof($file_handle_org_in)) {
@@ -262,10 +263,25 @@ if (isset($_POST['upload']))
     $initarray =array();
     $newfile = false;
     $idarray = array();
+    $item = array();
 
     //Table to report output for researchers/schol comms to track loaded tables
     echo '<table class ="inputypeindent">';
-    echo '<tr class ="inputypeindent"><td class ="inputypeindent">Paper</td><td>Id</td><td>DOI</td><td>Title</td><td>Total authors</td><td>Matched authors</td><td>Journal Year</td><td>Acceptance Date</td><td>Published Date</td><td>Full Text</td></tr>';
+    echo '<tr class ="inputypeindent"><td class ="inputypeindent">Paper</td><td>Id</td><td>DOI</td><td>Title</td><td>Total authors</td><td>Matched authors</td><td>Journal Year</td><td>Acceptance Date</td><td>Published Date</td><td>Full Text</td><td>Load Status</td></tr>';
+
+    $loaded_papers_file = $target_dir.'loaded.txt';
+    $file_handle_loaded = fopen($loaded_papers_file, "r") or die ("can't open loaded papers file");
+    //g loops through the loaded file to build array.
+    $c =0;
+    while (!feof($file_handle_loaded)) {
+        $line = fgets($file_handle_loaded);
+        $loadedarray[$c] = $line;
+        $c++;
+    }
+
+    fclose($file_handle_loaded);
+
+    $file_handle_loaded_write = fopen($loaded_papers_file, "a") or die ("can't open loaded papers file");
 
     foreach ($xml->children() as $object)
     {
@@ -314,6 +330,7 @@ if (isset($_POST['upload']))
         $textstatus = '';
         $date = '';
         $pubstatus = '';
+        $tagfield = '';
 
         foreach ($object->children() as $item)
         {
@@ -324,284 +341,277 @@ if (isset($_POST['upload']))
             $inspireid = false;
             $doi_done = false;
             //tag 024 = doi
-            if ($item[$n]['tag'] == '024') {
-                foreach($item[$n]->subfield as $subfield) {
-                    if ($subfield['code'] == 'a') {
-                        $doi_block = $subfield;
-                        //make sure we only do this once
-                        if ($doi_done == false) {
-                            //use DOI to interrogate SCOAP record. This gets us the PDF of the paper
-                            $scoapurl = 'https://repo.scoap3.org/search?ln=en&p=' . $doi_block . '&f=doi&action_search=Search&c=SCOAP3+Repository&sf=&so=d&rm=&rg=10&sc=1&of=xm';
-                            $scoapcurl = curl_init();
-                            $scoapfp = fopen($directory . "scoapcurl.xml", "w");
-                            curl_setopt($scoapcurl, CURLOPT_URL, $scoapurl);
-                            curl_setopt($scoapcurl, CURLOPT_SSL_VERIFYPEER, false);
-                            curl_setopt($scoapcurl, CURLOPT_FILE, $scoapfp);
-                            curl_setopt($scoapcurl, CURLOPT_HEADER, 0);
-                            curl_setopt($scoapcurl, CURLOPT_RETURNTRANSFER, TRUE);
-                            $scoapresponse = curl_exec($scoapcurl);
-                            $scoaphttpCode = curl_getinfo($scoapcurl, CURLINFO_HTTP_CODE);
+            if (isset($item['tag']))
+            {
+                $tagfield = $item['tag'];
+                if ($tagfield == '024') {
+                    foreach ($item->subfield as $subfield) {
+                        if ($subfield['code'] == 'a') {
+                            $doi_block = $subfield;
+                            //make sure we only do this once
+                            if ($doi_done == false) {
+                                //use DOI to interrogate SCOAP record. This gets us the PDF of the paper
+                                $scoapurl = 'https://repo.scoap3.org/search?ln=en&p=' . $doi_block . '&f=doi&action_search=Search&c=SCOAP3+Repository&sf=&so=d&rm=&rg=10&sc=1&of=xm';
+                                $scoapcurl = curl_init();
+                                $scoapfp = fopen($directory . "scoapcurl.xml", "w");
+                                curl_setopt($scoapcurl, CURLOPT_URL, $scoapurl);
+                                curl_setopt($scoapcurl, CURLOPT_SSL_VERIFYPEER, false);
+                                curl_setopt($scoapcurl, CURLOPT_FILE, $scoapfp);
+                                curl_setopt($scoapcurl, CURLOPT_HEADER, 0);
+                                curl_setopt($scoapcurl, CURLOPT_RETURNTRANSFER, TRUE);
+                                $scoapresponse = curl_exec($scoapcurl);
+                                $scoaphttpCode = curl_getinfo($scoapcurl, CURLINFO_HTTP_CODE);
 
-                            if ($scoaphttpCode == 404) {
-                                touch($directory . "cache/404_err.txt");
-                            } else {
-                                fwrite($scoapfp, $scoapresponse);
-                            }
-                            curl_close($scoapcurl);
-                            fclose($scoapfp);
-
-                            $scoapxml_file = $directory . "scoapcurl.xml";
-                            $scoapxml = simplexml_load_file($scoapxml_file);
-
-                            if ($scoapxml == FALSE) {
-                                echo "Failed loading SCOAP XML\n";
-
-                                foreach (libxml_get_errors() as $error) {
-                                    echo "\t", $error->message;
+                                if ($scoaphttpCode == 404) {
+                                    touch($directory . "cache/404_err.txt");
+                                } else {
+                                    fwrite($scoapfp, $scoapresponse);
                                 }
-                            }
-                            //s counts the lines in the scoap xml document
-                            $s = 0;
+                                curl_close($scoapcurl);
+                                fclose($scoapfp);
 
-                            foreach ($scoapxml->children() as $scoapobject) {
-                                foreach ($scoapobject->children() as $scoapitem) {
-                                    //marc field 856 is the electronic pdf
-                                    if ($scoapitem[$s]['tag'] == '856') {
-                                        foreach ($scoapitem[$s]->subfield as $scoapsubfield) {
-                                            if ($scoapsubfield['code'] == 'u') {
-                                                if (strpos($scoapsubfield, "=pdfa") > 0) {
-                                                    $fulltext = $scoapsubfield;
-                                                }
-                                                //interrogate the pdf's raw xml to get the acceptance date
-                                                if (strpos($scoapsubfield, ".xml") > 0) {
-                                                    $rawurl = $scoapsubfield;
-                                                    $rawcurl = curl_init();
-                                                    $rawfp = fopen($directory . "rawcurl.xml", "w");
-                                                    curl_setopt($rawcurl, CURLOPT_URL, $rawurl);
-                                                    curl_setopt($rawcurl, CURLOPT_FILE, $rawfp);
-                                                    curl_setopt($rawcurl, CURLOPT_HEADER, 0);
-                                                    curl_setopt($rawcurl, CURLOPT_RETURNTRANSFER, TRUE);
-                                                    $rawresponse = curl_exec($rawcurl);
-                                                    $rawhttpCode = curl_getinfo($rawcurl, CURLINFO_HTTP_CODE);
+                                $scoapxml_file = $directory . "scoapcurl.xml";
+                                $scoapxml = simplexml_load_file($scoapxml_file);
 
-                                                    if ($rawhttpCode == 404) {
-                                                        touch($directory . "cache/404_err.txt");
-                                                    } else {
-                                                        fwrite($rawfp, $rawresponse);
+                                if ($scoapxml == FALSE) {
+                                    echo "Failed loading SCOAP XML\n";
+
+                                    foreach (libxml_get_errors() as $error) {
+                                        echo "\t", $error->message;
+                                    }
+                                }
+                                //s counts the lines in the scoap xml document
+                                $s = 0;
+
+                                foreach ($scoapxml->children() as $scoapobject) {
+                                    foreach ($scoapobject->children() as $scoapitem) {
+                                        //marc field 856 is the electronic pdf
+                                        if ($scoapitem['tag'] == '856') {
+                                            foreach ($scoapitem->subfield as $scoapsubfield) {
+                                                if ($scoapsubfield['code'] == 'u') {
+                                                    if (strpos($scoapsubfield, "=pdfa") > 0) {
+                                                        $fulltext = $scoapsubfield;
                                                     }
+                                                    //interrogate the pdf's raw xml to get the acceptance date
+                                                    if (strpos($scoapsubfield, ".xml") > 0) {
+                                                        $rawurl = $scoapsubfield;
+                                                        $rawcurl = curl_init();
+                                                        $rawfp = fopen($directory . "rawcurl.xml", "w");
+                                                        curl_setopt($rawcurl, CURLOPT_URL, $rawurl);
+                                                        curl_setopt($rawcurl, CURLOPT_FILE, $rawfp);
+                                                        curl_setopt($rawcurl, CURLOPT_HEADER, 0);
+                                                        curl_setopt($rawcurl, CURLOPT_RETURNTRANSFER, TRUE);
+                                                        $rawresponse = curl_exec($rawcurl);
+                                                        $rawhttpCode = curl_getinfo($rawcurl, CURLINFO_HTTP_CODE);
 
-                                                    curl_close($rawcurl);
-                                                    fclose($rawfp);
-
-                                                    $rawxml_file = $directory . "rawcurl.xml";
-                                                    $rawxml = simplexml_load_file($rawxml_file);
-                                                    if ($rawxml == FALSE) {
-
-                                                        foreach (libxml_get_errors() as $error) {
-                                                            echo "\t", $error->message;
+                                                        if ($rawhttpCode == 404) {
+                                                            touch($directory . "cache/404_err.txt");
+                                                        } else {
+                                                            fwrite($rawfp, $rawresponse);
                                                         }
-                                                    }
 
-                                                    foreach ($rawxml->children() as $rawobject) {
-                                                        foreach ($rawobject->{'article-meta'}->history->date as $rawitem) {
-                                                            if ($rawitem['date-type'] == 'accepted') {
-                                                                $accday = $rawitem->day;
-                                                                $accmonth = $rawitem->month;
-                                                                $accyear = $rawitem->year;
-                                                                $accdate = $accyear . '-' . $accmonth . '-' . $accday;
+                                                        curl_close($rawcurl);
+                                                        fclose($rawfp);
+
+                                                        $rawxml_file = $directory . "rawcurl.xml";
+                                                        $rawxml = simplexml_load_file($rawxml_file);
+                                                        if ($rawxml == FALSE) {
+
+                                                            foreach (libxml_get_errors() as $error) {
+                                                                echo "\t", $error->message;
+                                                            }
+                                                        }
+
+                                                        foreach ($rawxml->children() as $rawobject) {
+                                                            foreach ($rawobject->{'article-meta'}->history->date as $rawitem) {
+                                                                if ($rawitem['date-type'] == 'accepted') {
+                                                                    $accday = $rawitem->day;
+                                                                    $accmonth = $rawitem->month;
+                                                                    $accyear = $rawitem->year;
+                                                                    $accdate = $accyear . '-' . $accmonth . '-' . $accday;
+                                                                }
+
                                                             }
 
-                                                        }
-
-                                                        foreach($rawobject->{'journal-meta'}->issn as $rawjournal)
-                                                        {
-                                                            $journal_issn = $rawjournal;
+                                                            foreach ($rawobject->{'journal-meta'}->issn as $rawjournal) {
+                                                                $journal_issn = $rawjournal;
+                                                            }
                                                         }
                                                     }
                                                 }
                                             }
                                         }
+                                        $s++;
                                     }
-                                    $s++;
                                 }
+                                $doi_done = true;
                             }
-                            $doi_done = true;
                         }
                     }
                 }
-            }
 
-            //035 is ID
-            if ($item[$n]['tag'] == '035') {
-                foreach($item[$n]->subfield as $subfield) {
-                    if ($subfield['code'] == '9') {
-                        $idarray[$idcount][0] = $subfield;
-                    }
-                    if ($subfield['code'] == 'a') {
-                        $idarray[$idcount][1] = $subfield;
-                    }
-                }
-                $idcount ++;
-            }
-
-            //773 is Journal info
-            if ($item[$n]['tag'] == '773') {
-                foreach($item[$n]->subfield as $subfield) {
-                    if ($subfield['code'] == 'p') {
-                        $journal_block = $subfield;
-                    }
-                    if ($subfield['code'] == 'v') {
-                        $volume_block = $subfield;
-                    }
-                    if ($subfield['code'] == 'n') {
-                        $number_block = $subfield;
-                    }
-                    if ($subfield['code'] == 'c') {
-                        $pages_block = $subfield;
-                    }
-                }
-            }
-
-            //245 is title
-            if ($item[$n]['tag'] == '245') {
-                foreach($item[$n]->subfield as $subfield) {
-                    if ($subfield['code'] == 'a') {
-                        $title_block = $subfield;
-                    }
-                }
-            }
-
-            //260 is published date
-            if ($item[$n]['tag'] == '260') {
-                foreach($item[$n]->subfield as $subfield) {
-                    if ($subfield['code'] == 'c') {
-                        $date = $subfield;
-                        $year_block = substr($date, 0, 4);
-                        $month_block = substr($date, 5, 2);
-                        if ($month_block == null) {
-                            $month_block = '01';
+                //035 is ID
+                if ($tagfield == '035') {
+                    foreach ($item->subfield as $subfield) {
+                        if ($subfield['code'] == '9') {
+                            $idarray[$idcount][0] = $subfield;
                         }
-                        $day_block = substr($date, 8, 2);
-                        if ($day_block == null) {
-                            $day_block = '01';
+                        if ($subfield['code'] == 'a') {
+                            $idarray[$idcount][1] = $subfield;
+                        }
+                    }
+                    $idcount++;
+                }
+
+                //773 is Journal info
+                if ($tagfield == '773') {
+                    foreach ($item->subfield as $subfield) {
+                        if ($subfield['code'] == 'p') {
+                            $journal_block = $subfield;
+                        }
+                        if ($subfield['code'] == 'v') {
+                            $volume_block = $subfield;
+                        }
+                        if ($subfield['code'] == 'n') {
+                            $number_block = $subfield;
+                        }
+                        if ($subfield['code'] == 'c') {
+                            $pages_block = $subfield;
                         }
                     }
                 }
-            }
 
-            //520 is abstract
-            if ($item[$n]['tag'] == '520') {
-                foreach($item[$n]->subfield as $subfield) {
-                    if ($subfield['code'] == 'a') {
-                        $abstract_block = $subfield;
-                    }
-                }
-            }
-
-            //540 is licence- requires special format
-            if ($item[$n]['tag'] == '540') {
-                foreach($item[$n]->subfield as $subfield) {
-                    if ($subfield['code'] == 'a') {
-                        switch ($subfield)
-                        {
-                            case "CC-BY-4.0":
-                            case "CC-BY-3.0";
-                            case "http://creativecommons.org/licenses/by/4.0/":
-                            case "http://creativecommons.org/licenses/by/3.0/":
-                                $licence = "/dk/atira/pure/core/document/licenses/creative_commons_attribution_cc_by_";
-                                break;
-                            case "CC-BY-ND-4.0":
-                            case "CC-BY-ND-3.0";
-                            case "http://creativecommons.org/licenses/by-nd/4.0/":
-                            case "http://creativecommons.org/licenses/by-nd/3.0/":
-                        	    $licence = "/dk/atira/pure/core/document/licenses/cc_by_nd";
-                                break;
-                            case "CC-BY-NC-4.0":
-                            case "CC-BY-NC-3.0";
-                            case "http://creativecommons.org/licenses/by-nc/4.0/":
-                            case "http://creativecommons.org/licenses/by-nc/3.0/":
-                                $licence = "/dk/atira/pure/core/document/licenses/cc_by_nc";
-                                break;
-                            case "CC-BY-NC-ND-4.0":
-                            case "CC-BY-NC-ND-3.0";
-                            case "http://creativecommons.org/licenses/by-nc-nd/4.0/":
-                            case "http://creativecommons.org/licenses/by-nc-nd/3.0/":
-                                $licence = "/dk/atira/pure/core/document/licenses/cc_by_nc_nd";
-                                break;
-                            case "CC-BY-NC-SA-4.0":
-                            case "CC-BY-NC-SA-3.0";
-                            case "http://creativecommons.org/licenses/by-nc-sa/4.0/":
-                            case "http://creativecommons.org/licenses/by-nc-sa/3.0/":
-                                $licence = "/dk/atira/pure/core/document/licenses/cc_by_nc_sa";
-                                break;
-                            case "CC-BY-SA-4.0":
-                            case "CC-BY-SA-3.0";
-                            case "http://creativecommons.org/licenses/by-sa/4.0/":
-                            case "http://creativecommons.org/licenses/by-sa/3.0/":
-                                $licence = "/dk/atira/pure/core/document/licenses/cc_by_sa";
-                                break;
-                            default:
-                                $licence = '/dk/atira/pure/core/document/licenses/creative_commons_attribution_cc_by_';
-                        }
-
-                    }
-                }
-            }
-
-            //700 is author (in all its glory)
-            if ($item[$n]['tag'] == '700') {
-                foreach($item[$n]->subfield as $subfield)
-                {
-                    if ($subfield['code'] == 'a')
-                    {
-                        $name = $subfield;
-                        //dirty hack- these two authors had special chars that, no matter what UTF-8 mapping I did, resulted in dodgy characters, prevented loathing.
-                        //this is horrible hard-coding, but anyone uploading would have to deal with these manually EVERY time they go near the importer for LHCb otherwise.
-                        if ((strstr($name, "Marchand")) and (strstr($name, "Jean")))
-                        {
-                            $name = "Marchand, Jean F.";
-                        }
-                        if ((strstr($name, "Girard")) and (strstr($name, "Olivier")))
-                        {
-                            $name = "Girard, Olivier G.";
+                //245 is title
+                if ($tagfield == '245') {
+                    foreach ($item->subfield as $subfield) {
+                        if ($subfield['code'] == 'a') {
+                            $title_block = $subfield;
                         }
                     }
-                    //get INSPIRE-ID
-                    if ($subfield['code'] == 'i')
-                    {
-                        $authorid = $subfield;
-                        $inspirecode = true;
-                    }
-                    //get orgs
-                    if ($subfield['code'] == 'u')
-                    {
-                        $org = $subfield;
+                }
+
+                //260 is published date
+                if ($tagfield == '260') {
+                    foreach ($item->subfield as $subfield) {
+                        if ($subfield['code'] == 'c') {
+                            $date = $subfield;
+                            $year_block = substr($date, 0, 4);
+                            $month_block = substr($date, 5, 2);
+                            if ($month_block == null) {
+                                $month_block = '01';
+                            }
+                            $day_block = substr($date, 8, 2);
+                            if ($day_block == null) {
+                                $day_block = '01';
+                            }
+                        }
                     }
                 }
 
-                if (!$inspirecode == true)
-                {
-                    $author[$j][0] = '';
+                //520 is abstract
+                if ($tagfield == '520') {
+                    foreach ($item->subfield as $subfield) {
+                        if ($subfield['code'] == 'a') {
+                            $abstract_block = $subfield;
+                        }
+                    }
                 }
-                else{
-                    $author[$j][0] = $authorid;
+
+                //540 is licence- requires special format
+                if ($tagfield == '540') {
+                    foreach ($item->subfield as $subfield) {
+                        if ($subfield['code'] == 'a') {
+                            switch ($subfield) {
+                                case "CC-BY-4.0":
+                                case "CC-BY-3.0";
+                                case "http://creativecommons.org/licenses/by/4.0/":
+                                case "http://creativecommons.org/licenses/by/3.0/":
+                                    $licence = "/dk/atira/pure/core/document/licenses/creative_commons_attribution_cc_by_";
+                                    break;
+                                case "CC-BY-ND-4.0":
+                                case "CC-BY-ND-3.0";
+                                case "http://creativecommons.org/licenses/by-nd/4.0/":
+                                case "http://creativecommons.org/licenses/by-nd/3.0/":
+                                    $licence = "/dk/atira/pure/core/document/licenses/cc_by_nd";
+                                    break;
+                                case "CC-BY-NC-4.0":
+                                case "CC-BY-NC-3.0";
+                                case "http://creativecommons.org/licenses/by-nc/4.0/":
+                                case "http://creativecommons.org/licenses/by-nc/3.0/":
+                                    $licence = "/dk/atira/pure/core/document/licenses/cc_by_nc";
+                                    break;
+                                case "CC-BY-NC-ND-4.0":
+                                case "CC-BY-NC-ND-3.0";
+                                case "http://creativecommons.org/licenses/by-nc-nd/4.0/":
+                                case "http://creativecommons.org/licenses/by-nc-nd/3.0/":
+                                    $licence = "/dk/atira/pure/core/document/licenses/cc_by_nc_nd";
+                                    break;
+                                case "CC-BY-NC-SA-4.0":
+                                case "CC-BY-NC-SA-3.0";
+                                case "http://creativecommons.org/licenses/by-nc-sa/4.0/":
+                                case "http://creativecommons.org/licenses/by-nc-sa/3.0/":
+                                    $licence = "/dk/atira/pure/core/document/licenses/cc_by_nc_sa";
+                                    break;
+                                case "CC-BY-SA-4.0":
+                                case "CC-BY-SA-3.0";
+                                case "http://creativecommons.org/licenses/by-sa/4.0/":
+                                case "http://creativecommons.org/licenses/by-sa/3.0/":
+                                    $licence = "/dk/atira/pure/core/document/licenses/cc_by_sa";
+                                    break;
+                                default:
+                                    $licence = '/dk/atira/pure/core/document/licenses/creative_commons_attribution_cc_by_';
+                            }
+
+                        }
+                    }
                 }
-                $commapos = strpos($name, ",");
-                $family = substr($name, 0, $commapos);
-                $given = substr($name, $commapos+2, 10);
-                $given = str_replace(".", " ", $given);
-                $given = str_replace("  ", " ", $given);
-                $given = trim($given);
-                $inits = substr($given,0,1).substr($family,0,1);
-                $author [$j][1] = $family;
-                $author[$j][2] = $given;
-                $author[$j][3] = $given." ".$family;
-                $author[$j][4] = $org;
-                $author[$j][5] = $name;
-                $author[$j][6] = $inits;
-                $j++;
+
+                //700 is author (in all its glory)
+                if ($tagfield == '700') {
+                    foreach ($item->subfield as $subfield) {
+                        if ($subfield['code'] == 'a') {
+                            $name = $subfield;
+                            //dirty hack- these two authors had special chars that, no matter what UTF-8 mapping I did, resulted in dodgy characters, prevented loathing.
+                            //this is horrible hard-coding, but anyone uploading would have to deal with these manually EVERY time they go near the importer for LHCb otherwise.
+                            if ((strstr($name, "Marchand")) and (strstr($name, "Jean"))) {
+                                $name = "Marchand, Jean F.";
+                            }
+                            if ((strstr($name, "Girard")) and (strstr($name, "Olivier"))) {
+                                $name = "Girard, Olivier G.";
+                            }
+                        }
+                        //get INSPIRE-ID
+                        if ($subfield['code'] == 'i') {
+                            $authorid = $subfield;
+                            $inspirecode = true;
+                        }
+                        //get orgs
+                        if ($subfield['code'] == 'u') {
+                            $org = $subfield;
+                        }
+                    }
+
+                    if (!$inspirecode == true) {
+                        $author[$j][0] = '';
+                    } else {
+                        $author[$j][0] = $authorid;
+                    }
+                    $commapos = strpos($name, ",");
+                    $family = substr($name, 0, $commapos);
+                    $given = substr($name, $commapos + 2, 10);
+                    $given = str_replace(".", " ", $given);
+                    $given = str_replace("  ", " ", $given);
+                    $given = trim($given);
+                    $inits = substr($given, 0, 1) . substr($family, 0, 1);
+                    $author [$j][1] = $family;
+                    $author[$j][2] = $given;
+                    $author[$j][3] = $given . " " . $family;
+                    $author[$j][4] = $org;
+                    $author[$j][5] = $name;
+                    $author[$j][6] = $inits;
+                    $j++;
+                }
             }
-
 
             $n++;
         }
@@ -610,10 +620,14 @@ if (isset($_POST['upload']))
         if ($j > 0) {
             for ($x = 0; $x <= $j; $x++) {
                 for ($q = 0; $q <= $pureCount; $q++) {
-                    if ($pureIntAr[$q][2] !== null) {
-                        if ($author[$x][0] == '') {
-                            if ($pureIntAr[$q][2] == $author[$x][5]) {
-                                $matchedcount++;
+                    //if !== null
+                    if (isset($pureIntAr[$q][2])) {
+                        //if ($author[$x][0] == '') {
+                        if (!isset($author[$x][0])) {
+                            if (isset($pureIntAr[$q][2]) and isset($author[$x][5])) {
+                                if ($pureIntAr[$q][2] == $author[$x][5]) {
+                                    $matchedcount++;
+                                }
                             }
                         } else {
                             if ($pureIntAr[$q][0] == $author[$x][0]) {
@@ -625,12 +639,14 @@ if (isset($_POST['upload']))
             }
         }
         //ID cascade- INSPIRETeX preferred
+
         for ($g = 0; $g<=$idcount; $g++)
         {
-            if ($idarray[$g][0] == 'INSPIRETeX')
-            {
-                $id = $idarray[$g][1];
-                $inspireid = true;
+            if (isset($idarray[$g][0])) {
+                if ($idarray[$g][0] == 'INSPIRETeX') {
+                    $id = $idarray[$g][1];
+                    $inspireid = true;
+                }
             }
         }
         //failing that, use SPIRESTeX
@@ -653,9 +669,25 @@ if (isset($_POST['upload']))
                 }
             }
         }
+        $f = 0;
+        $loadedcount = count($loadedarray);
+        $paperloaded = false;
+        for ($f = 0;$f <= $loadedcount; $f++)
+        {
+            if (isset($loadedarray[$f]) and isset($id))
+            {
+                if (trim($loadedarray[$f]) == trim($id))
+                {
+                    $paperloaded = true;
+                }
+            }
+        }
+        $loadstatus = '';
         //write the record if there are matches- of no interest to us otherwise
         //If there is no published date, it won't load, so skip in that case too
-        if($matchedcount > 0 and $date !== '') {
+        //Don't write XML if paper has already been loaded
+        //Do write XML if the override flag has been set to true, i.e. it's a one-paper fix.
+        if($matchedcount > 0 and $date !== '' and ($paperloaded == false or $override == true)) {
             $writer->startElement("v1:contributionToJournal");
             $writer->writeAttribute('id', $id);
             $writer->writeAttribute('subType', 'article');
@@ -704,32 +736,41 @@ if (isset($_POST['upload']))
             $writer->startElement('v1:persons');
             $matchedcount = 0;
             //process authors
-            for ($x = 0; $x <= $j; $x++) {
-                if (($author[$x][0] == '')) {
+            for ($x = 0; $x <= $j; $x++)
+            {
+                if (!isset($author[$x][0]))
+                {
                     $internal = false;
                 }
-                if ($author[$x][1] !== null) {
+
+                if (isset($author[$x][1]))
+                {
                     $writer->startElement('v1:author');
                     $writer->writeElement('v1:role', 'author');
                     $writer->startElement('v1:person');
                     $internal = false;
                     //look for matches, when found report as internal, with ID
                     for ($q = 0; $q <= $pureCount; $q++) {
-                        if ($author[$x][0] == '') {
-                            if ($pureIntAr[$q][2] == $author[$x][5]) {
-                                $writer->writeAttribute('id', trim($pureIntAr[$q][1]));
-                                $internal = true;
-                                $writer->writeAttribute('external', 'false');
-                                $initarray[$matchedcount] = $author[$x][6].'/';
-                                $matchedcount++;
+                        if (!isset($author[$x][0]))
+                        {
+                            if (isset($pureIntAr[$q][2]) and isset($author[$x][5])) {
+                                if ($pureIntAr[$q][2] == $author[$x][5]) {
+                                    $writer->writeAttribute('id', trim($pureIntAr[$q][1]));
+                                    $internal = true;
+                                    $writer->writeAttribute('external', 'false');
+                                    $initarray[$matchedcount] = $author[$x][6] . '/';
+                                    $matchedcount++;
+                                }
                             }
                         } else {
-                            if ($pureIntAr[$q][0] == $author[$x][0]) {
-                                $writer->writeAttribute('id', trim($pureIntAr[$q][1]));
-                                $internal = true;
-                                $writer->writeAttribute('external', 'false');
-                                $initarray[$matchedcount] = $author[$x][6].'/';
-                                $matchedcount++;
+                            if (isset($pureIntAr[$q][0]) and (isset($author[$x][0]))) {
+                                if ($pureIntAr[$q][0] == $author[$x][0]) {
+                                    $writer->writeAttribute('id', trim($pureIntAr[$q][1]));
+                                    $internal = true;
+                                    $writer->writeAttribute('external', 'false');
+                                    $initarray[$matchedcount] = $author[$x][6] . '/';
+                                    $matchedcount++;
+                                }
                             }
                         }
                     }
@@ -748,9 +789,12 @@ if (isset($_POST['upload']))
                         $ordID = '';
                         //get matches using input org array
                         for ($d = 0; $d <= $o; $d++) {
-                            if (trim($pureIntOrg[$d][0]) == trim($author[$x][4])) {
-                                $orgId = trim($pureIntOrg[$d][1]);
-                                $orgfound = true;
+                            //putting issets round to avoid php Warnings
+                            if (isset($pureIntOrg[$d][0]) and (isset($author[$x][4]))) {
+                                if (trim($pureIntOrg[$d][0]) == trim($author[$x][4])) {
+                                    $orgId = trim($pureIntOrg[$d][1]);
+                                    $orgfound = true;
+                                }
                             }
                         }
 
@@ -818,6 +862,7 @@ if (isset($_POST['upload']))
             $writer->endElement();
             $writer->endElement();
             $papercounter++;
+            fwrite($file_handle_loaded_write, "\n".$id);
             $newfile = false;
             //if you have hit the end of the loop, start a new file once this one is closed
             if($papercounter == $loop)
@@ -836,8 +881,12 @@ if (isset($_POST['upload']))
         {
             //unloadable papers appear red
             $trstyle = "trred";
-        }
 
+            if ($paperloaded == true)
+            {
+                $loadstatus = 'PAPER ALREADY LOADED';
+            }
+        }
 
         if ($date == '')
         {
@@ -853,9 +902,11 @@ if (isset($_POST['upload']))
 
         for ($ic = 0; $ic <= $matchedcount; $ic++)
         {
-            echo $initarray[$ic];
+            if (isset($initarray[$ic])) {
+                echo $initarray[$ic];
+            }
         }
-        echo ')</td><td>'.$year.'</td><td>'.$accstatus.'</td><td>'.$pubstatus.'</td><td>'.$textstatus.'</td></tr>';
+        echo ')</td><td>'.$year.'</td><td>'.$accstatus.'</td><td>'.$pubstatus.'</td><td>'.$textstatus.'</td><td>'.$loadstatus.'</td></tr>';
 
         $z++;
 
@@ -865,7 +916,7 @@ if (isset($_POST['upload']))
     //unlink files so new ones can be used
     unlink($target_id_file);
     unlink($target_org_file);
-    unlink($processed_file);
+
     //write papers to a zip file for download
     $zipname = $directory.'PURELoad.zip';
     $zip = new ZipArchive();
