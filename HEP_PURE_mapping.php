@@ -394,7 +394,12 @@ if (isset($_POST['upload']))
                                                     }
                                                     //interrogate the pdf's raw xml to get the acceptance date
                                                     if (strpos($scoapsubfield, ".xml") > 0) {
-                                                        $rawurl = $scoapsubfield;
+                                                        if (strpos($scoapsubfield, "ttp://") > 0) {
+                                                            $rawurl = str_replace("ttp:", "ttps:", $scoapsubfield);
+                                                        }
+                                                        else{
+                                                            $rawurl = $scoapsubfield;
+                                                        }
                                                         $rawcurl = curl_init();
                                                         $rawfp = fopen($directory . "rawcurl.xml", "w");
                                                         curl_setopt($rawcurl, CURLOPT_URL, $rawurl);
