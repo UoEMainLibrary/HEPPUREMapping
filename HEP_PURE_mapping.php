@@ -25,11 +25,12 @@
     <img src="images/lddutilities.jpg">
     <h1>INSPIRE HEP to PURE mapping process </h1>
     <p>Convert your INSPIRE-HEP search to PURE XML here.</p>
-    <p>Enter your collaboration (e.g. LHCb, Atlas) and year, or run for a single paper.</p>
+    <p>Enter your collaboration (e.g. LHCb, Atlas) and journal year, or run for a single paper.</p>
     <p>Upload your "internal ID" file with three colon-separated parms (INSPIRE ID:PURE ID:Name). Name format is (e.g.) Clarke, P.E.L.</p>
-    <p>Upload your "internal Org" file with two colon-separated parms (Name:PURE ID:). Name format is as INSPIRE-HEP.</p>
+    <!--<p>Upload your "internal Org" file with two colon-separated parms (Name:PURE ID:). Name format is as INSPIRE-HEP.</p>-->
     <p>This code is on github (https://github/UoEMainLibrary/HEPPUREMapping . You will need download.php too.</p>
-    <p>Sample files on github (https://github/UoEMainLibrary/HEPPUREMapping/input/[atlasUserMap.txt, LHCbUserMap.txt, orgs.txt]. There is only one organisations file, which can be used for both processes.</p>
+    <!--<p>Sample files on github (https://github/UoEMainLibrary/HEPPUREMapping/input/[atlasUserMap.txt, LHCbUserMap.txt, orgs.txt]. There is only one organisations file, which can be used for both processes.</p>-->
+    <p>Sample files on github (https://github/UoEMainLibrary/HEPPUREMapping/input/[atlasUserMap.txt, LHCbUserMap.txt].</p>
     <p>More info is available in the README.</p>
 </div>
 <div class = "box">
@@ -123,7 +124,8 @@ if (isset($_POST['upload']))
     fclose($fp);
 
     //Process upload of internal ID mapping file
-    $target_id_file = $target_dir . basename($_FILES["internalIDfile"]["name"]);
+    $upfile = basename($_FILES["internalIDfile"]["name"]);
+    $target_id_file = $target_dir . $upfile;
     echo '<h5>ID file is called '.$target_id_file.'</h5>';
 
 
@@ -150,7 +152,7 @@ if (isset($_POST['upload']))
     // if everything is ok, try to upload file
     } else {
         if (move_uploaded_file($_FILES["internalIDfile"]["tmp_name"], $target_id_file)) {
-            echo "<h5> The file ". basename( $_FILES["internalIDfile"]["name"]). " has been uploaded.</h5>";
+            echo "<h5> The file ". $upfile. " has been uploaded.</h5>";
         } else {
             echo "Sorry, there was an error uploading your ID file.";
         }
@@ -427,19 +429,25 @@ if (isset($_POST['upload']))
                                                             }
                                                         }
 
-                                                        foreach ($rawxml->children() as $rawobject) {
-                                                            foreach ($rawobject->{'article-meta'}->history->date as $rawitem) {
-                                                                if ($rawitem['date-type'] == 'accepted') {
-                                                                    $accday = $rawitem->day;
-                                                                    $accmonth = $rawitem->month;
-                                                                    $accyear = $rawitem->year;
-                                                                    $accdate = $accyear . '-' . $accmonth . '-' . $accday;
+                                                        //Trying to fix "no children issue"- SR Aug 17
+                                                        $child_total = recurseXML($rawxml);
+
+                                                        if ($child_total > 0)
+                                                        {
+                                                            foreach ($rawxml->children() as $rawobject) {
+                                                                foreach ($rawobject->{'article-meta'}->history->date as $rawitem) {
+                                                                    if ($rawitem['date-type'] == 'accepted') {
+                                                                        $accday = $rawitem->day;
+                                                                        $accmonth = $rawitem->month;
+                                                                        $accyear = $rawitem->year;
+                                                                        $accdate = $accyear . '-' . $accmonth . '-' . $accday;
+                                                                    }
+
                                                                 }
 
-                                                            }
-
-                                                            foreach ($rawobject->{'journal-meta'}->issn as $rawjournal) {
-                                                                $journal_issn = $rawjournal;
+                                                                foreach ($rawobject->{'journal-meta'}->issn as $rawjournal) {
+                                                                    $journal_issn = $rawjournal;
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -503,11 +511,11 @@ if (isset($_POST['upload']))
                             $year_block = substr($date, 0, 4);
                             $month_block = substr($date, 5, 2);
                             if ($month_block == null) {
-                                $month_block = '01';
+                                $month_block = '';
                             }
                             $day_block = substr($date, 8, 2);
                             if ($day_block == null) {
-                                $day_block = '01';
+                                $day_block = '';
                             }
                         }
                     }
@@ -603,12 +611,12 @@ if (isset($_POST['upload']))
                     }
                     $commapos = strpos($name, ",");
                     $family = substr($name, 0, $commapos);
-                    $given = substr($name, $commapos + 2, 10);
+                    $given = substr($name, $commapos + 2, 100);
                     $given = str_replace(".", " ", $given);
                     $given = str_replace("  ", " ", $given);
                     $given = trim($given);
                     $inits = substr($given, 0, 1) . substr($family, 0, 1);
-                    $author [$j][1] = $family;
+                    $author[$j][1] = $family;
                     $author[$j][2] = $given;
                     $author[$j][3] = $given . " " . $family;
                     $author[$j][4] = $org;
@@ -704,8 +712,13 @@ if (isset($_POST['upload']))
             $writer->writeElement('v1:statusType', 'published');
             $writer->startElement('v1:date');
             $writer->writeElement('commons:year', $year_block);
-            $writer->writeElement('commons:month', $month_block);
-            $writer->writeElement('commons:day', $day_block);
+            if ($month_block !== '') {
+                $writer->writeElement('commons:month', $month_block);
+            }
+            if ($day_block != '')
+            {
+                $writer->writeElement('commons:day', $day_block);
+            }
             $writer->endElement();
             $writer->endElement();
             //Report no Acc Date if we did not get one earlier
@@ -726,6 +739,7 @@ if (isset($_POST['upload']))
             }
 
             $writer->endElement();
+            $writer->writeElement('v1:workflow', 'forApproval');
             $writer->writeElement('v1:language', 'en_GB');
             $writer->startElement('v1:title');
             $writer->writeElement('commons:text', $title_block);
@@ -750,9 +764,7 @@ if (isset($_POST['upload']))
 
                 if (isset($author[$x][1]))
                 {
-                    $writer->startElement('v1:author');
-                    $writer->writeElement('v1:role', 'author');
-                    $writer->startElement('v1:person');
+
                     $internal = false;
                     //look for matches, when found report as internal, with ID
                     for ($q = 0; $q <= $pureCount; $q++) {
@@ -760,19 +772,28 @@ if (isset($_POST['upload']))
                         {
                             if (isset($pureIntAr[$q][2]) and isset($author[$x][5])) {
                                 if ($pureIntAr[$q][2] == $author[$x][5]) {
+                                    $writer->startElement('v1:author');
+                                    $writer->writeElement('v1:role', 'author');
+                                    $writer->startElement('v1:person');
                                     $writer->writeAttribute('id', trim($pureIntAr[$q][1]));
                                     $internal = true;
-                                    $writer->writeAttribute('external', 'false');
+                                    //$writer->writeAttribute('external', 'false');
+                                    $writer->writeAttribute('origin', 'unknown');
                                     $initarray[$matchedcount] = $author[$x][6] . '/';
                                     $matchedcount++;
                                 }
                             }
                         } else {
+
                             if (isset($pureIntAr[$q][0]) and (isset($author[$x][0]))) {
                                 if ($pureIntAr[$q][0] == $author[$x][0]) {
+                                    $writer->startElement('v1:author');
+                                    $writer->writeElement('v1:role', 'author');
+                                    $writer->startElement('v1:person');
                                     $writer->writeAttribute('id', trim($pureIntAr[$q][1]));
                                     $internal = true;
-                                    $writer->writeAttribute('external', 'false');
+                                    //$writer->writeAttribute('external', 'false');
+                                    $writer->writeAttribute('origin', 'unknown');
                                     $initarray[$matchedcount] = $author[$x][6] . '/';
                                     $matchedcount++;
                                 }
@@ -780,14 +801,27 @@ if (isset($_POST['upload']))
                         }
                     }
 
-                    if (!$internal) {
+                   /* if (!$internal) {
                         $writer->writeAttribute('external', 'true');
                     }
-                    $writer->writeElement('v1:fullName', $author[$x][3]);
-                    $writer->writeElement('v1:firstName', $author[$x][2]);
-                    $writer->writeElement('v1:lastName', $author[$x][1]);
-                    $writer->endElement();
+                   */
+                    if ($internal) {
+
+                        $writer->writeElement('v1:fullName', $author[$x][3]);
+                        $writer->writeElement('v1:firstName', $author[$x][2]);
+                        $writer->writeElement('v1:lastName', $author[$x][1]);
+                        $writer->endElement();
+                        $writer->startElement('v1:organisations');
+                        $writer->startElement('v1:organisation');
+                        $writer->startElement('v1:name');
+                        $writer->writeElement('commons:text', 'School of Physics and Astronomy');
+                        $writer->endElement();
+                        $writer->endElement();
+                        $writer->endElement();
+                        $writer->endElement();
+                    }
                     //If organisations checkbox ticked, run the relevant orgs into the record
+                    /*
                     if ($orgs == true) {
                         $writer->startElement('v1:organisations');
                         $orgfound = false;
@@ -818,9 +852,24 @@ if (isset($_POST['upload']))
                         $writer->endElement();
                         $writer->endElement();
                     }
+
                     $writer->endElement();
+                    */
                 }
             }
+            //Instead of writing out all authors, just write out "The xxx Collaboration"
+            $writer->startElement('v1:author');
+            $writer->writeElement('v1:role', 'author');
+            $writer->startElement('v1:person');
+            // $writer->writeAttribute('external', 'true');
+            $writer->writeAttribute('origin', 'unknown');
+            $upos = strpos($upfile, "U");
+            $collab = substr($upfile,0,$upos);
+            $writer->writeElement('v1:fullName', $collab.' Collaboration');
+            $writer->writeElement('v1:firstName', $collab);
+            $writer->writeElement('v1:lastName', 'Collaboration');
+            $writer->endElement();
+            $writer->endElement();
 
             $urlbit = 'http://dx.doi.org/';
 
@@ -991,3 +1040,18 @@ if (isset($_POST['upload']))
 ?>
 </body>
 </html>
+
+<?php
+function recurseXML($xml,$parent="")
+{
+    $child_count = 0;
+    foreach($xml as $key=>$value)
+    {
+        $child_count++;
+       // if(recurseXML($value,$parent.".".$key) == 0)  // no children, aka "leaf node"
+        //{
+         //   print($parent . "." . (string)$key . " = " . (string)$value . " has no children.<BR>\n");
+       // }
+    }
+    return $child_count;
+}?>
