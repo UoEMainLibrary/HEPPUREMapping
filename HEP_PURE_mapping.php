@@ -41,9 +41,9 @@
             <tr class ="inputtypeindent"><td class ="inputtypeindent">Enter journal year (* for all years):<input type="text" name="year" id="year"  class ="inputtypeindent"></td></tr>
             <tr class ="inputtypeindent"><td class ="inputtypeindent">OR enter specific paper (this overrides above fields):<input type="text" name="paperid" id="paperid"  class ="inputtypeindent"></td></tr>
             <tr class ="inputtypeindent"><td class ="inputtypeindent">Upload internal ID file:<input type="file" name="internalIDfile" id="internalIDfile"  class ="inputtypeindent"></td></tr>
-            <tr class ="inputtypeindent"><td class ="inputtypeindent">Include organisations? <input type="checkbox" name="orgs" id="orgs"></td></tr>
-            <tr class ="inputtypeindent"><td class ="inputtypeindent">Upload org mapping file:<input type="file" name="orgfile" id="orgfile"  class ="inputtypeindent"></td></tr>
-            <tr class ="inputtypeindent"><td class ="inputtypeindent">No. papers per file (Default 5)<input type="text" name="loop" id="loop"  class ="inputtypeindent"></td></tr>
+           <!-- <tr class ="inputtypeindent"><td class ="inputtypeindent">Include organisations? <input type="checkbox" name="orgs" id="orgs"></td></tr>
+            <tr class ="inputtypeindent"><td class ="inputtypeindent">Upload org mapping file:<input type="file" name="orgfile" id="orgfile"  class ="inputtypeindent"></td></tr>-->
+            <tr class ="inputtypeindent"><td class ="inputtypeindent">No. papers per file (Default 20)<input type="text" name="loop" id="loop"  class ="inputtypeindent"></td></tr>
         </table>
         <br>
         <input type="submit" value="Go" name="upload" class ="inputtypeindent">
@@ -76,7 +76,7 @@ if (isset($_POST['upload']))
         $loop = $_POST['loop'];
     }
     else{
-        $loop = 5;
+        $loop = 20;
     }
     $override = false;
     //if specific paper specified, that overrides anything else entered
@@ -584,14 +584,17 @@ if (isset($_POST['upload']))
                     foreach ($item->subfield as $subfield) {
                         if ($subfield['code'] == 'a') {
                             $name = $subfield;
-                            //dirty hack- these two authors had special chars that, no matter what UTF-8 mapping I did, resulted in dodgy characters, prevented loathing.
+                            //dirty hack- these two authors had special chars that, no matter what UTF-8 mapping I did, resulted in dodgy characters, prevented loading.
                             //this is horrible hard-coding, but anyone uploading would have to deal with these manually EVERY time they go near the importer for LHCb otherwise.
+                            //Think this can be got rid of now we aren't dealing with  externals
+                            /*
                             if ((strstr($name, "Marchand")) and (strstr($name, "Jean"))) {
                                 $name = "Marchand, Jean F.";
                             }
                             if ((strstr($name, "Girard")) and (strstr($name, "Olivier"))) {
                                 $name = "Girard, Olivier G.";
                             }
+                            */
                         }
                         //get INSPIRE-ID
                         if ($subfield['code'] == 'i') {
