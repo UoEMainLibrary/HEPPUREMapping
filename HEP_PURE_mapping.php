@@ -353,9 +353,12 @@ if (isset($_POST['upload']))
                             //make sure we only do this once
                             if ($doi_done == false) {
                                 //use DOI to interrogate SCOAP record. This gets us the PDF of the paper
-                                $scoapurl = 'https://repo.scoap3.org/search?ln=en&p=' . $doi_block . '&f=doi&action_search=Search&c=SCOAP3+Repository&sf=&so=d&rm=&rg=10&sc=1&of=xm';
+                                //SR 17/03/2020 change to use JSON search on SCOAP
+                                //$scoapurl = 'https://repo.scoap3.org/search?ln=en&p=' . $doi_block . '&f=doi&action_search=Search&c=SCOAP3+Repository&sf=&so=d&rm=&rg=10&sc=1&of=xm';
+                                $scoapurl = 'https://repo.scoap3.org/api/records/?q=' . $doi_block;
                                 $scoapcurl = curl_init();
-                                $scoapfp = fopen($directory . "scoapcurl.xml", "w");
+                                //$scoapfp = fopen($directory . "scoapcurl.xml", "w");
+                                $scoapfp = fopen($directory . "scoapcurl.json", "w");
                                 curl_setopt($scoapcurl, CURLOPT_URL, $scoapurl);
                                 curl_setopt($scoapcurl, CURLOPT_SSL_VERIFYPEER, false);
                                 curl_setopt($scoapcurl, CURLOPT_FILE, $scoapfp);
@@ -372,91 +375,98 @@ if (isset($_POST['upload']))
                                 curl_close($scoapcurl);
                                 fclose($scoapfp);
 
-                                $scoapxml_file = $directory . "scoapcurl.xml";
-                                $scoapxml = simplexml_load_file($scoapxml_file);
+                                //$scoapxml_file = $directory . "scoapcurl.xml";
+                                //$scoapxml = simplexml_load_file($scoapxml_file);
 
-                                if ($scoapxml == FALSE) {
-                                    echo "Failed loading SCOAP XML\n";
+                                $scoapjson_file = $directory . "scoapcurl.json";
+                                $scoapjson = json_decode($scoapresponse, true);
 
-                                    foreach (libxml_get_errors() as $error) {
-                                        echo "\t", $error->message;
+                                $s = 0;
+                                foreach ($scoapjson["hits"]["hits"][0]["metadata"]["_files"] as $file_def)
+                                {
+                                    if  ($file_def["filetype"] == "pdf/a")
+                                    {
+                                        $fulltext = "https://repo.scoap3.org/api/files/" .$file_def["bucket"]."/".$file_def["key"];
                                     }
                                 }
-                                //s counts the lines in the scoap xml document
-                                $s = 0;
+                                
+                                foreach ($scoapjson["hits"]["hits"][0]["metadata"]["_files"] as $file_def)
+                                {   
+                                    if ($file_def["filetype"] == "xml")
+                                    {
+                                        //this is the XML of the raw text
+                                        $rawurl = "https://repo.scoap3.org/api/files/" .$file_def["bucket"]."/".$file_def["key"];
+                                        
+                                        //Interrogate that to get acceptance date data and ISSN
+                                        $rawcurl = curl_init();
+                                        $rawfp = fopen($directory . "rawcurl.xml", "w");
+                                        curl_setopt($rawcurl, CURLOPT_URL, $rawurl);
+                                        curl_setopt($rawcurl, CURLOPT_FILE, $rawfp);
+                                        curl_setopt($rawcurl, CURLOPT_HEADER, 0);
+                                        curl_setopt($rawcurl, CURLOPT_RETURNTRANSFER, TRUE);
+                                        $rawresponse = curl_exec($rawcurl);
+                                        $rawhttpCode = curl_getinfo($rawcurl, CURLINFO_HTTP_CODE);
 
-                                foreach ($scoapxml->children() as $scoapobject) {
-                                    foreach ($scoapobject->children() as $scoapitem) {
-                                        //marc field 856 is the electronic pdf
-                                        if ($scoapitem['tag'] == '856') {
-                                            foreach ($scoapitem->subfield as $scoapsubfield) {
-                                                if ($scoapsubfield['code'] == 'u') {
-                                                    if (strpos($scoapsubfield, "=pdfa") > 0) {
-                                                        $fulltext = $scoapsubfield;
+                                        if ($rawhttpCode == 404) {
+                                            touch($directory . "cache/404_err.txt");
+                                        } else {
+                                            fwrite($rawfp, $rawresponse);
+                                        }
+
+                                        curl_close($rawcurl);
+                                        fclose($rawfp);
+
+                                        $rawxml_file = $directory . "rawcurl.xml";
+                                        $rawxml = simplexml_load_file($rawxml_file);
+                                        if ($rawxml == FALSE) {
+
+                                            foreach (libxml_get_errors() as $error) {
+                                                echo "\t", $error->message;
+                                            }
+                                        }
+
+                                        //Trying to fix "no children issue"- SR Aug 17
+                                        $child_total = recurseXML($rawxml);
+                                        if ($child_total > 0)
+                                        {
+                                            foreach ($rawxml->children() as $rawobject) {
+                                                foreach($rawobject->Volume->Issue->Article->ArticleInfo->ArticleHistory->Accepted as $rawaccepted){
+                                                        //print_r($rawaccepted);
+                                                        $accday = str_pad($rawaccepted->Day, 2, '0', STR_PAD_LEFT);
+                                                        //echo 'ACCDAY'.$accday;
+                                                        $accmonth = str_pad($rawaccepted->Month, 2, '0', STR_PAD_LEFT);
+                                                        //echo 'ACCMONTH'.$accmonth;
+                                                        $accyear = $rawaccepted->Year;
+                                                        //echo 'ACCYEAR'.$accyear;
+                                                        $accdate = $accyear . '-' . $accmonth . '-' . $accday;
+
                                                     }
-                                                    //interrogate the pdf's raw xml to get the acceptance date
-                                                    if (strpos($scoapsubfield, ".xml") > 0) {
-                                                        if (strpos($scoapsubfield, "ttp://") > 0) {
-                                                            $rawurl = str_replace("ttp:", "ttps:", $scoapsubfield);
-                                                        }
-                                                        else{
-                                                            $rawurl = $scoapsubfield;
-                                                        }
-                                                        $rawcurl = curl_init();
-                                                        $rawfp = fopen($directory . "rawcurl.xml", "w");
-                                                        curl_setopt($rawcurl, CURLOPT_URL, $rawurl);
-                                                        curl_setopt($rawcurl, CURLOPT_FILE, $rawfp);
-                                                        curl_setopt($rawcurl, CURLOPT_HEADER, 0);
-                                                        curl_setopt($rawcurl, CURLOPT_RETURNTRANSFER, TRUE);
-                                                        $rawresponse = curl_exec($rawcurl);
-                                                        $rawhttpCode = curl_getinfo($rawcurl, CURLINFO_HTTP_CODE);
-
-                                                        if ($rawhttpCode == 404) {
-                                                            touch($directory . "cache/404_err.txt");
-                                                        } else {
-                                                            fwrite($rawfp, $rawresponse);
-                                                        }
-
-                                                        curl_close($rawcurl);
-                                                        fclose($rawfp);
-
-                                                        $rawxml_file = $directory . "rawcurl.xml";
-                                                        $rawxml = simplexml_load_file($rawxml_file);
-                                                        if ($rawxml == FALSE) {
-
-                                                            foreach (libxml_get_errors() as $error) {
-                                                                echo "\t", $error->message;
-                                                            }
-                                                        }
-
-                                                        //Trying to fix "no children issue"- SR Aug 17
-                                                        $child_total = recurseXML($rawxml);
-
-                                                        if ($child_total > 0)
-                                                        {
-                                                            foreach ($rawxml->children() as $rawobject) {
-                                                                foreach ($rawobject->{'article-meta'}->history->date as $rawitem) {
-                                                                    if ($rawitem['date-type'] == 'accepted') {
-                                                                        $accday = $rawitem->day;
-                                                                        $accmonth = $rawitem->month;
-                                                                        $accyear = $rawitem->year;
-                                                                        $accdate = $accyear . '-' . $accmonth . '-' . $accday;
-                                                                    }
-
-                                                                }
-
-                                                                foreach ($rawobject->{'journal-meta'}->issn as $rawjournal) {
-                                                                    $journal_issn = $rawjournal;
-                                                                }
-                                                            }
-                                                        }
+                                               /* foreach ($rawobject->{'article-meta'}->history->date as $rawitem) {
+                                                    if ($rawitem['date-type'] == 'accepted') {
+                                                        $accday = $rawitem->day;
+                                                        $accmonth = $rawitem->month;
+                                                        $accyear = $rawitem->year;
+                                                        $accdate = $accyear . '-' . $accmonth . '-' . $accday;
                                                     }
+
+                                                }*/
+
+                                                //foreach ($rawobject->{'journal-meta'}->issn as $rawjournal) {
+                                                foreach($rawobject->JournalInfo->JournalElectronicISSN as $rawjournal){
+                                                    $journal_issn = $rawjournal;
+                                            
                                                 }
                                             }
                                         }
-                                        $s++;
+                                      $s++;   
                                     }
                                 }
+
+                               // print_r($scoaparr["_files"];
+
+                               
+                                
+                                /*}*/
                                 $doi_done = true;
                             }
                         }
