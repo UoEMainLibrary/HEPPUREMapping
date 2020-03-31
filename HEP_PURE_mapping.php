@@ -57,9 +57,13 @@
 //Two files required to make this work- an ID file for persons and an org file.
 //User can do their own, but syntax is available in sample files.
 //Examples are on git- lddutilities/input/[atlasUserMap.txt, LHCbUserMap.txt, atlasOrgs.txt, LHCbOrgs.txt]
+//UPDATE: Org files no longer utilised, as we are moving to load only The Collaboration as an author, and not 
+//every individual author
 include 'config/vars.php';
 
 ini_set('max_execution_time', 400);
+
+//if content uploaded appropriately
 if (isset($_POST['upload']))
 {
 
@@ -79,17 +83,20 @@ if (isset($_POST['upload']))
         $loop = 20;
     }
     $override = false;
+
     //if specific paper specified, that overrides anything else entered
     if ($paperid !== '') {
         $parms = $paperid;
         $override = true;
     }
     else
+    //if year unspecified
     if ($year == "*")
     {
         $parms = "cn+".$collab.'+and+collection:published';
     }
     else
+    //if year specified    
     {
         $parms = "cn+".$collab."+and+jy+".$year.'+and+collection:published';
     }
@@ -132,6 +139,7 @@ if (isset($_POST['upload']))
     $uploadOkID = 1;
     $imageFileTypeID = pathinfo($target_id_file,PATHINFO_EXTENSION);
 
+    //process experience of ID file
     if (file_exists($target_id_file)) {
         echo "Sorry, file already exists.";
         $uploadOkID = 0;
@@ -158,8 +166,10 @@ if (isset($_POST['upload']))
         }
     }
 
-    chmod ($target_id_file, 0777);
 
+    chmod ($target_id_file, 0777);
+    
+    //redundant, as we are no longer processing org files.
     if ($orgs == true) {
         //Process Organisations mapping file
         $target_org_file = $target_dir . basename($_FILES["orgfile"]["name"]);
@@ -289,6 +299,7 @@ if (isset($_POST['upload']))
     {
         if ($newfile == true)
         {
+            //start writing XML version of paper for Pure
             $writer = new XMLWriter();
             $writer->openURI($directory."PURELoad".$filecounter.".xml");
             $writer->startDocument('1.0', 'UTF-8');
@@ -334,6 +345,7 @@ if (isset($_POST['upload']))
         $pubstatus = '';
         $tagfield = '';
 
+        //parse through the INSPIRE record
         foreach ($object->children() as $item)
         {
             $update = false;
@@ -346,13 +358,14 @@ if (isset($_POST['upload']))
             if (isset($item['tag']))
             {
                 $tagfield = $item['tag'];
+                //DOI
                 if ($tagfield == '024') {
                     foreach ($item->subfield as $subfield) {
                         if ($subfield['code'] == 'a') {
                             $doi_block = $subfield;
                             //make sure we only do this once
                             if ($doi_done == false) {
-                                //use DOI to interrogate SCOAP record. This gets us the PDF of the paper
+                                //use DOI to interrogate SCOAP record. This gets us the URL of the raw paper
                                 //SR 17/03/2020 change to use JSON search on SCOAP
                                 //$scoapurl = 'https://repo.scoap3.org/search?ln=en&p=' . $doi_block . '&f=doi&action_search=Search&c=SCOAP3+Repository&sf=&so=d&rm=&rg=10&sc=1&of=xm';
                                 $scoapurl = 'https://repo.scoap3.org/api/records/?q=' . $doi_block;
@@ -382,8 +395,9 @@ if (isset($_POST['upload']))
                                 $scoapjson = json_decode($scoapresponse, true);
 
                                 $s = 0;
-                                foreach ($scoapjson["hits"]["hits"][0]["metadata"]["_files"] as $file_def)
+                                foreach ($scoapjson["hits"]["hits"][0]["metadata"]["_files"] as $file_def)                                    
                                 {
+                                    //use pdf to populate full text field. Don't use for anything else
                                     if  ($file_def["filetype"] == "pdf/a")
                                     {
                                         $fulltext = "https://repo.scoap3.org/api/files/" .$file_def["bucket"]."/".$file_def["key"];
@@ -392,6 +406,7 @@ if (isset($_POST['upload']))
                                 
                                 foreach ($scoapjson["hits"]["hits"][0]["metadata"]["_files"] as $file_def)
                                 {   
+                                    //use XML version to interrogate the data
                                     if ($file_def["filetype"] == "xml")
                                     {
                                         //this is the XML of the raw text
@@ -416,6 +431,7 @@ if (isset($_POST['upload']))
                                         curl_close($rawcurl);
                                         fclose($rawfp);
 
+                                        //write XML to file for ref
                                         $rawxml_file = $directory . "rawcurl.xml";
                                         $rawxml = simplexml_load_file($rawxml_file);
                                         if ($rawxml == FALSE) {
@@ -431,28 +447,16 @@ if (isset($_POST['upload']))
                                         {
                                             foreach ($rawxml->children() as $rawobject) {
                                                 foreach($rawobject->Volume->Issue->Article->ArticleInfo->ArticleHistory->Accepted as $rawaccepted){
-                                                        //print_r($rawaccepted);
+                                                    //get acceptance date (pad day and month with zeroes where appropriate)
                                                         $accday = str_pad($rawaccepted->Day, 2, '0', STR_PAD_LEFT);
-                                                        //echo 'ACCDAY'.$accday;
                                                         $accmonth = str_pad($rawaccepted->Month, 2, '0', STR_PAD_LEFT);
-                                                        //echo 'ACCMONTH'.$accmonth;
                                                         $accyear = $rawaccepted->Year;
-                                                        //echo 'ACCYEAR'.$accyear;
                                                         $accdate = $accyear . '-' . $accmonth . '-' . $accday;
 
                                                     }
-                                               /* foreach ($rawobject->{'article-meta'}->history->date as $rawitem) {
-                                                    if ($rawitem['date-type'] == 'accepted') {
-                                                        $accday = $rawitem->day;
-                                                        $accmonth = $rawitem->month;
-                                                        $accyear = $rawitem->year;
-                                                        $accdate = $accyear . '-' . $accmonth . '-' . $accday;
-                                                    }
 
-                                                }*/
-
-                                                //foreach ($rawobject->{'journal-meta'}->issn as $rawjournal) {
                                                 foreach($rawobject->JournalInfo->JournalElectronicISSN as $rawjournal){
+                                                    //get ISSN
                                                     $journal_issn = $rawjournal;
                                             
                                                 }
@@ -461,12 +465,6 @@ if (isset($_POST['upload']))
                                       $s++;   
                                     }
                                 }
-
-                               // print_r($scoaparr["_files"];
-
-                               
-                                
-                                /*}*/
                                 $doi_done = true;
                             }
                         }
@@ -594,17 +592,6 @@ if (isset($_POST['upload']))
                     foreach ($item->subfield as $subfield) {
                         if ($subfield['code'] == 'a') {
                             $name = $subfield;
-                            //dirty hack- these two authors had special chars that, no matter what UTF-8 mapping I did, resulted in dodgy characters, prevented loading.
-                            //this is horrible hard-coding, but anyone uploading would have to deal with these manually EVERY time they go near the importer for LHCb otherwise.
-                            //Think this can be got rid of now we aren't dealing with  externals
-                            /*
-                            if ((strstr($name, "Marchand")) and (strstr($name, "Jean"))) {
-                                $name = "Marchand, Jean F.";
-                            }
-                            if ((strstr($name, "Girard")) and (strstr($name, "Olivier"))) {
-                                $name = "Girard, Olivier G.";
-                            }
-                            */
                         }
                         //get INSPIRE-ID
                         if ($subfield['code'] == 'i') {
@@ -814,10 +801,6 @@ if (isset($_POST['upload']))
                         }
                     }
 
-                   /* if (!$internal) {
-                        $writer->writeAttribute('external', 'true');
-                    }
-                   */
                     if ($internal) {
 
                         $writer->writeElement('v1:fullName', $author[$x][3]);
@@ -833,41 +816,6 @@ if (isset($_POST['upload']))
                         $writer->endElement();
                         $writer->endElement();
                     }
-                    //If organisations checkbox ticked, run the relevant orgs into the record
-                    /*
-                    if ($orgs == true) {
-                        $writer->startElement('v1:organisations');
-                        $orgfound = false;
-                        $ordID = '';
-                        //get matches using input org array
-                        for ($d = 0; $d <= $o; $d++) {
-                            //putting issets round to avoid php Warnings
-                            if (isset($pureIntOrg[$d][0]) and (isset($author[$x][4]))) {
-                                if (trim($pureIntOrg[$d][0]) == trim($author[$x][4])) {
-                                    $orgId = trim($pureIntOrg[$d][1]);
-                                    $orgfound = true;
-                                }
-                            }
-                        }
-
-                        if ($orgfound)
-                        {
-                            $writer->startElement('v1:organisation');
-                            $writer->writeAttribute('id',$orgId);
-                        }
-                        else
-                        {
-                            $writer->startElement('v1:organisation');
-                        }
-                        $writer->startElement('v1:name');
-                        $writer->writeElement('commons:text', $author[$x][4]);
-                        $writer->endElement();
-                        $writer->endElement();
-                        $writer->endElement();
-                    }
-
-                    $writer->endElement();
-                    */
                 }
             }
             //Instead of writing out all authors, just write out "The xxx Collaboration"
@@ -1061,10 +1009,7 @@ function recurseXML($xml,$parent="")
     foreach($xml as $key=>$value)
     {
         $child_count++;
-       // if(recurseXML($value,$parent.".".$key) == 0)  // no children, aka "leaf node"
-        //{
-         //   print($parent . "." . (string)$key . " = " . (string)$value . " has no children.<BR>\n");
-       // }
+
     }
     return $child_count;
 }?>
