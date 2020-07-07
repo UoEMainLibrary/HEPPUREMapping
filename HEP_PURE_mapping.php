@@ -51,6 +51,18 @@
 
 </div>
 <?php
+function wh_log($log_msg)
+{
+    $log_filename = "files/log.txt";
+    if (!file_exists($log_filename)) 
+    {
+        // create directory/folder uploads.
+        mkdir($log_filename, 0777, true);
+    }
+    $log_file_data = $log_filename.'/log_' . date('d-M-Y') . '.log';
+    // if you don't add `FILE_APPEND`, the file will be erased each time you add a log
+    file_put_contents($log_file_data, $log_msg . "\n", FILE_APPEND);
+} 
 
 //Scott Renton, March 2016
 //Load Inspire-HEP papers into PURE
@@ -102,7 +114,7 @@ if (isset($_POST['upload']))
     }
 
     //This URL is the inspirehep search- can run this in a browser to check
-    $url = 'https://inspirehep.net/search?p='.$parms.'&of=xm&em=B&sf=year&so=d&rg=500';
+    $url = 'https://old.inspirehep.net/search?p='.$parms.'&of=xm&em=B&sf=year&so=d&rg=500';
     echo '<h5>Your INSPIRE-HEP search URL is: '.$url.'</h5>';
 
     //generate space to save Ouput. Timestamp so multiple users can run at once
@@ -363,6 +375,8 @@ if (isset($_POST['upload']))
                     foreach ($item->subfield as $subfield) {
                         if ($subfield['code'] == 'a') {
                             $doi_block = $subfield;
+ 
+                            echo $doi_block;
                             //make sure we only do this once
                             if ($doi_done == false) {
                                 //use DOI to interrogate SCOAP record. This gets us the URL of the raw paper
@@ -446,6 +460,7 @@ if (isset($_POST['upload']))
                                         if ($child_total > 0)
                                         {
                                             foreach ($rawxml->children() as $rawobject) {
+                                                //print_r($rawobject);
                                                 foreach($rawobject->Volume->Issue->Article->ArticleInfo->ArticleHistory->Accepted as $rawaccepted){
                                                     //get acceptance date (pad day and month with zeroes where appropriate)
                                                         $accday = str_pad($rawaccepted->Day, 2, '0', STR_PAD_LEFT);
@@ -682,6 +697,10 @@ if (isset($_POST['upload']))
                 }
             }
         }
+
+        wh_log($id);
+        echo $id;
+
         $f = 0;
         $loadedcount = count($loadedarray);
         $paperloaded = false;
@@ -996,6 +1015,8 @@ if (isset($_POST['upload']))
 
     echo '<h5>That seems to have done everything it is supposed to. Get your file by clicking the link below.</h5>';
     echo '<a href= "download.php?directory='.$directory.'"><h4>Download Output</h4></a>';
+    fwrite($file_handle_loaded_write, "\n");
+    fwrite($file_handle_loaded_write, "LOAD COMPLETE- ". date("Y/m/d"));
 }
 
 ?>
@@ -1012,4 +1033,10 @@ function recurseXML($xml,$parent="")
 
     }
     return $child_count;
-}?>
+}
+
+
+
+
+
+?>
