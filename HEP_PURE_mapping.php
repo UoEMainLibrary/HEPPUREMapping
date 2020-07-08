@@ -256,11 +256,15 @@ if (isset($_POST['upload']))
     echo '<h5>Authors To Match</h5>';
     while (!feof($file_handle_id_in)) {
         $line = fgets($file_handle_id_in);
-        $map = explode(":", $line);
-        $pureIntAr[$k][0] = $map[0];
-        $pureIntAr[$k][1] = $map[1];
-        $pureIntAr[$k][2] = $map[2];
-        echo '<p>'.$k.' '.$pureIntAr[$k][0].' '.$pureIntAr[$k][1].' '.$pureIntAr[$k][2]."</p>";
+        //SR - 08/07/2020 - white space should be ignored
+        if (strpos($line, ":") > 0)
+        {
+            $map = explode(":", $line);
+            $pureIntAr[$k][0] = $map[0];
+            $pureIntAr[$k][1] = $map[1];
+            $pureIntAr[$k][2] = $map[2];
+            echo '<p>'.$k.' '.$pureIntAr[$k][0].' '.$pureIntAr[$k][1].' '.$pureIntAr[$k][2]."</p>";
+        }    
         $k++;
     }
 
@@ -411,6 +415,7 @@ if (isset($_POST['upload']))
                                 $s = 0;
                                 foreach ($scoapjson["hits"]["hits"][0]["metadata"]["_files"] as $file_def)                                    
                                 {
+                                    echo "FILE TYPE".$file_def["filetype"];
                                     //use pdf to populate full text field. Don't use for anything else
                                     if  ($file_def["filetype"] == "pdf/a")
                                     {
@@ -783,7 +788,6 @@ if (isset($_POST['upload']))
 
                 if (isset($author[$x][1]))
                 {
-
                     $internal = false;
                     //look for matches, when found report as internal, with ID
                     for ($q = 0; $q <= $pureCount; $q++) {
